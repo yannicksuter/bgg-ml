@@ -27,9 +27,6 @@ if __name__ == "__main__":
     getCmdArgs(sys.argv)
 
     collection = GameCollection(USERNAME)
-    if FORCE_RELOAD:
-        collection.loadFromWeb()
-    else:
-        collection.loadFromDump()
+    collection.load(FORCE_RELOAD)
 
-    collection.show()
+    # collection.show()
