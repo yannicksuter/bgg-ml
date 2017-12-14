@@ -2,14 +2,26 @@
 # -*- coding: utf-8 -*-
 
 import sys
-from bggdata import GameCollection
+from bggdata import GameRepository, GameCollection
 
+VERBOSE = False
+ACTIONS = None
 FORCE_RELOAD = False
 USERNAME = None
+
+def printSysInformation():
+    import boardgamegeek2
+    print('BGGLib: {}'.format(boardgamegeek2.__version__))
 
 def getCmdArgs(argv):
     for arg in sys.argv:
         try:
+            if arg.startswith("--verbose") or arg.startswith("-v"):
+                global VERBOSE
+                VERBOSE = True
+            if arg.startswith("--action="):
+                global ACTIONS
+                ACTIONS = arg[len("--action="):]
             if arg.startswith("--force_online"):
                 global FORCE_RELOAD
                 FORCE_RELOAD = True
@@ -21,12 +33,17 @@ def getCmdArgs(argv):
 
 if __name__ == "__main__":
     if len(sys.argv) <= 1:
-        print("usage: %s --force_online --user=USERNAME" % sys.argv[0].split('/')[-1])
+        print("usage: %s --action==[dump_collection,get_details]--force_online --user=USERNAME" % sys.argv[0].split('/')[-1])
         sys.exit(0)
 
     getCmdArgs(sys.argv)
+    printSysInformation()
 
-    collection = GameCollection(USERNAME)
-    collection.load(FORCE_RELOAD)
+    # load top 2000 games
+    repository = GameRepository()
+    repository.load(FORCE_RELOAD)
+    repository.getById(28143).print()
 
-    # collection.show()
+    # # load user collection
+    # collection = GameCollection(USERNAME)
+    # collection.load(FORCE_RELOAD)
