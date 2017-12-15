@@ -41,7 +41,7 @@ if __name__ == "__main__":
 
     # load top 2000 games
     repository = GameRepository()
-    repository.load(FORCE_RELOAD)
+    repository.load(FORCE_RELOAD, max_pages=1)
     repository.getById(28143).print()
 
     # # load user collection

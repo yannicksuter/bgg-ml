@@ -6,6 +6,39 @@ from boardgamegeek2 import BGGClient
 from lxml import html
 import requests
 
+
+def loadCache(filename, obj_list):
+    assert obj_list is not None
+    try:
+        with open(filename, "r") as input_file:
+            for line in input_file.readlines():
+                obj_list.append(Game().set(json.loads(line)))
+        print("{} entries loaded from cache ({}).".format(len(obj_list), filename))
+    except:
+        pass
+
+
+def dumpCache(filename, obj_list):
+    assert obj_list is not None
+    try:
+        with open(filename, "w") as output_file:
+            for entry in obj_list:
+                output_file.write(
+                    json.dumps(entry.__dict__).encode(encoding='UTF-8', errors='strict').decode('utf-8') + "\n")
+    except:
+        pass
+
+def normalize(text):
+    if text is None:
+        return ''
+    s = ''.join(re.compile(r'\W+', re.UNICODE).split(text)).lower()
+    return filter(lambda x: x in set(string.printable), s)
+
+def chunks(l, n):
+    """Yield successive n-sized chunks from l."""
+    for i in range(0, len(l), n):
+        yield l[i:i + n]
+
 class Game(object):
     def __init__(self, id = 0, name = "", overall_rank = None, min_players = None, max_players = None, min_playing_time = None, max_playing_time = None):
         self.id = id
@@ -81,26 +114,19 @@ class GameRepository(object):
         self.games = None
         self.cache_filename = "data/game_repository.cache"
 
-    def normalize(self, text):
-        if text is None:
-            return ''
-        s = ''.join(re.compile(r'\W+', re.UNICODE).split(text)).lower()
-        return filter(lambda x: x in set(string.printable), s)
-
-
-    def load(self, force_reload=False):
+    def load(self, force_reload=False, max_pages=20):
         self.games = []
         try:
-            self.loadCache(self.cache_filename, self.games)
+            loadCache(self.cache_filename, self.games)
             print("Repository loaded: %d games (cache)" % len(self.games))
         except:
             print("Cached file not found. ({})".format(self.cache_filename))
 
         if self.games is None or force_reload:
             entry_counter = 0
+            uid_r = re.compile('/boardgame/(\d+)')
             url_paged = "https://boardgamegeek.com/browse/boardgame/page/{}?sort=rank"
-            for page in range(1,2):
-                r = re.compile('/boardgame/(\d+)')
+            for page in range(1,max_pages+1):
                 dom = html.fromstring(requests.get(url_paged.format(page)).text)
                 rows = dom.cssselect('tr#row_')
                 if rows is not None:
@@ -109,33 +135,19 @@ class GameRepository(object):
                             entry_exp_rank = entry_counter+1
                             entry_link = row.cssselect('td div a')[0].attrib['href']
                             entry_title = row.cssselect('td div a')[0].text
-                            entry_id = int(r.search(entry_link).group(1))
+                            entry_id = int(uid_r.search(entry_link).group(1))
                             entry_counter += 1
-                            # print("#{}:{} {} ({})".format(entry_exp_rank, entry_id, entry_title, entry_link))
                             self.games.append(Game(entry_id, entry_title, overall_rank=entry_exp_rank))
                         except:
                             pass
             print("Repository loaded: %d games (web)" % len(self.games))
-            self.dumpCache(self.cache_filename, self.games)
+            dumpCache(self.cache_filename, self.games)
 
-    def loadCache(self, filename, list):
-        try:
-            with open(filename, "r") as input_file:
-                for line in input_file.readlines():
-                    list.append(Game().set(json.loads(line)))
-            print("{} entries loaded from cache ({}).".format(len(list), filename))
-        except:
-            pass
-
-
-    def dumpCache(self, filename, list):
-        try:
-            if list:
-                with open(filename, "w") as output_file:
-                    for entry in list:
-                        output_file.write(json.dumps(entry.__dict__).encode(encoding='UTF-8', errors='strict').decode('utf-8')+"\n")
-        except:
-            pass
+        # read details for all entries
+        bgg = BGGClient()
+        for chunk in chunks(self.games, 20):
+            games = [game.id for game in chunk]
+            res = bgg.game_list(games)
 
     def getById(self, id):
         for game in self.games:
