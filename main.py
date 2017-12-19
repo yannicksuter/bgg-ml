@@ -12,6 +12,10 @@ USERNAME = None
 def printSysInformation():
     import boardgamegeek2
     print('BGGLib: {}'.format(boardgamegeek2.__version__))
+    if FORCE_RELOAD:
+        print('Data: Fetch online resources')
+    else:
+        print('Data: Use cached data if available')
 
 def getCmdArgs(argv):
     for arg in sys.argv:
@@ -41,9 +45,12 @@ if __name__ == "__main__":
 
     # load top 2000 games
     repository = GameRepository()
-    repository.load(FORCE_RELOAD, max_pages=1)
-    repository.getById(28143).print()
+    repository.load(FORCE_RELOAD)
 
     # # load user collection
-    # collection = GameCollection(USERNAME)
-    # collection.load(FORCE_RELOAD)
+    collection = GameCollection(USERNAME)
+    collection.load(repository, FORCE_RELOAD)
+
+    print("")
+    repository.getById(71).print()
+    repository.getById(163930).print()

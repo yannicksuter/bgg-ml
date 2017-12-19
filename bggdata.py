@@ -5,7 +5,9 @@ import json, re, string
 from boardgamegeek2 import BGGClient
 from lxml import html
 import requests
-
+import progressbar
+from tqdm import tqdm
+# from progress.bar import Bar
 
 def loadCache(filename, obj_list):
     assert obj_list is not None
@@ -44,14 +46,27 @@ class Game(object):
         self.id = id
         self.name = name
         self.overall_rank = overall_rank
-        self.min_players = min_players
-        self.max_players = max_players
-        self.min_playing_time = min_playing_time
-        self.max_playing_time = max_playing_time
+        self.expansion = None
+        self.expands = None
+        self.minplayers = min_players
+        self.maxplayers = max_players
+        self.minplaytime = min_playing_time
+        self.maxplaytime = max_playing_time
 
     def set(self, values):
         for k, v in values.items():
-            setattr(self, k, v)
+            if k in self.__dict__.keys():
+                setattr(self, k, v)
+        return self
+
+    def isValid(self):
+        return (self.id != 0 and self.name != "")
+
+    def setBGGGame(self, bgg_game):
+        self.set(bgg_game._data)
+        for rank in bgg_game.ranks:
+            if rank.id == 1:
+                self.overall_rank = rank.value
         return self
 
     def print(self):
@@ -67,101 +82,100 @@ class GameCollection(object):
         self.username = username
         self.cache_filename = "data/%s_owned_collection.cache" % self.username
         self.owned_games = None
+        self.bgg = BGGClient()
 
-    def load(self, force_reload = False):
+    def load(self, repository, force_reload = False):
         if not self.username:
             raise Exception("ERROR: no username was defined, please use --user=USERNAME to provide reference.")
 
-        if not force_reload:
-            try:
-                with open(self.cache_filename, "r") as owned:
-                    self.owned_games = []
-                    for line in owned.readlines():
-                        self.owned_games.append(Game().set(json.loads(line)))
-                print("Collection loaded: %d games (cache)" % len(self.owned_games))
-                return
-            except:
-                print("Cached file not found. ({})".format(self.cache_filename))
-
-
-        self.bgg = BGGClient()
-        owned_games  = self.bgg.collection(self.username, own=True)
-        if owned_games:
-            self.owned_games = []
-            for game in owned_games.items:
-                self.owned_games.append(Game(game.id, game.name, game.min_players, game.max_players, game.min_playing_time, game.max_playing_time))
-            print("Collection loaded: %d games (web)" % len(self.owned_games))
-            self.dumpCache()
-
-    def dumpCache(self):
+        game_ids = []
+        self.owned_games = []
         try:
-            if self.owned_games:
-                with open(self.cache_filename, "w") as owned:
-                    for game in self.owned_games:
-                        owned.write(json.dumps(game.__dict__).encode(encoding='UTF-8', errors='strict').decode('utf-8')+"\n")
+            with open(self.cache_filename, "r") as owned:
+                self.owned_games = []
+                for line in owned.readlines():
+                    g_json = json.loads(line)
+                    game_ids.append(g_json['id'])
         except:
-            pass
+            print("Cached file not found. ({})".format(self.cache_filename))
 
-    def show(self):
-        if self.owned_games:
-            for game in self.owned_games:
-                game.print()
-        else:
-            print("no games loaded for %s" % self.username)
+        if len(self.owned_games) == 0 or force_reload:
+            game_ids = []
+            collection  = self.bgg.collection(self.username, own=True)
+            if collection:
+                for game in collection.items:
+                    game_ids.append(game.id)
+
+        self.owned_games = repository.getByIds(game_ids)
+        dumpCache(self.cache_filename, self.owned_games)
+
+        print("Collection [owned:{}] loaded: {} games".format(self.username, len(self.owned_games)))
 
 class GameRepository(object):
     def __init__(self):
         self.games = None
         self.cache_filename = "data/game_repository.cache"
+        self.bgg = BGGClient()
 
     def load(self, force_reload=False, max_pages=20):
         self.games = []
         try:
             loadCache(self.cache_filename, self.games)
-            print("Repository loaded: %d games (cache)" % len(self.games))
         except:
             print("Cached file not found. ({})".format(self.cache_filename))
 
-        if self.games is None or force_reload:
+        if len(self.games) == 0 or force_reload:
             entry_counter = 0
             uid_r = re.compile('/boardgame/(\d+)')
             url_paged = "https://boardgamegeek.com/browse/boardgame/page/{}?sort=rank"
-            for page in range(1,max_pages+1):
-                dom = html.fromstring(requests.get(url_paged.format(page)).text)
+            for page in tqdm(range(max_pages), desc="Loading overall-rank games", ncols=100):
+                dom = html.fromstring(requests.get(url_paged.format(page+1)).text)
                 rows = dom.cssselect('tr#row_')
                 if rows is not None:
                     for row in rows:
                         try:
                             entry_exp_rank = entry_counter+1
                             entry_link = row.cssselect('td div a')[0].attrib['href']
-                            entry_title = row.cssselect('td div a')[0].text
                             entry_id = int(uid_r.search(entry_link).group(1))
                             entry_counter += 1
-                            self.games.append(Game(entry_id, entry_title, overall_rank=entry_exp_rank))
+                            self.games.append(Game(entry_id, overall_rank=entry_exp_rank))
                         except:
                             pass
-            print("Repository loaded: %d games (web)" % len(self.games))
             dumpCache(self.cache_filename, self.games)
 
-        # read details for all entries
-        bgg = BGGClient()
-        for chunk in chunks(self.games, 20):
-            games = [game.id for game in chunk]
-            res = bgg.game_list(games)
+        self.validate()
+        print("Repository loaded: %d games." % len(self.games))
 
-    def getById(self, id):
+    def validate(self, retries = 3):
+        for run in range(retries):
+            invalid_entries = list(filter(lambda x : not x.isValid(), self.games))
+            if len(invalid_entries) == 0:
+                return
+            print("Loading missing game details from BGG [count: {}].".format(len(invalid_entries)))
+            for chunk in tqdm(iterable=list(chunks(invalid_entries, 50)), desc="Loading game details (try:{})".format(run+1), ncols=100):
+                games = [game.id for game in chunk]
+                for res in self.bgg.game_list(games):
+                    self.getById(res.id).setBGGGame(res)
+            dumpCache(self.cache_filename, self.games)
+
+    def getByIds(self, id_list, load_missing = True):
+        if load_missing:
+            game_index = [x.id for x in self.games]
+            for missing_id in list(filter(lambda x: x not in game_index, id_list)):
+                self.games.append(Game(id=missing_id))
+            self.validate()
+        return list(filter(lambda x: x.id in id_list and x.isValid, self.games))
+
+    def getById(self, id, load_missing = True):
         for game in self.games:
             if game.id == id:
                 return game
-        return None
 
-    # def loadDetails(self, force_reload=False):
-        # game_ids = [82222]
-        # self.bgg = BGGClient()
-        # for details in self.bgg.game_list(game_ids):
-        #     game = self.getById(details.id)
-        #     game.rank_overall = details.bgg_rank
-        # mechanics
-        # categories
-        # families
-        # print(details)
+        result = None
+        if load_missing:
+            bgg_game = self.bgg.game(game_id=id)
+            if bgg_game:
+                print("Missing ID={}, loading...".format(id))
+                result = Game().setBGGGame(bgg_game)
+                self.games.append(result)
+        return result
