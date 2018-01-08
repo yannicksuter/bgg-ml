@@ -5,9 +5,7 @@ import json, re, string
 from boardgamegeek2 import BGGClient
 from lxml import html
 import requests
-import progressbar
 from tqdm import tqdm
-# from progress.bar import Bar
 
 def loadCache(filename, obj_list):
     assert obj_list is not None
@@ -42,8 +40,9 @@ def chunks(l, n):
         yield l[i:i + n]
 
 class Game(object):
-    def __init__(self, id = 0, name = "", overall_rank = None, min_players = None, max_players = None, min_playing_time = None, max_playing_time = None):
+    def __init__(self, id = 0, initialized = False, name = "", overall_rank = None, min_players = None, max_players = None, min_playing_time = None, max_playing_time = None):
         self.id = id
+        self.initialized = initialized
         self.name = name
         self.overall_rank = overall_rank
         self.expansion = None
@@ -52,21 +51,26 @@ class Game(object):
         self.maxplayers = max_players
         self.minplaytime = min_playing_time
         self.maxplaytime = max_playing_time
+        self.features = GameFeatures()
+        self.features.initialize(self)
 
     def set(self, values):
         for k, v in values.items():
             if k in self.__dict__.keys():
                 setattr(self, k, v)
+        self.features.initialize(self)
         return self
 
     def isValid(self):
-        return (self.id != 0 and self.name != "")
+        return (self.id != 0 and self.name != "") and self.initialized == True
 
     def setBGGGame(self, bgg_game):
         self.set(bgg_game._data)
         for rank in bgg_game.ranks:
             if rank.id == 1:
                 self.overall_rank = rank.value
+        self.initialized = True
+        self.features.initialize(self)
         return self
 
     def print(self):
@@ -76,6 +80,34 @@ class Game(object):
                 print(" {} : {}".format(key, value))
         # print(self.id, self.name, self.min_players, self.max_players, self.min_playing_time, self.max_playing_time)
 
+class GameFeatures(object):
+    def __init__(self):
+        self.initialized = False
+        self.player1 = False
+        self.player2 = False
+        self.player3 = False
+        self.player4 = False
+        self.player5 = False
+        self.playerX = False
+
+    def initialize(self, game):
+        if game.initialized:
+            if game.minplayers <= 1 and game.maxplayers >= 1:
+                self.player1 = True
+            if game.minplayers <= 2 and game.maxplayers >= 2:
+                self.player2 = True
+            if game.minplayers <= 3 and game.maxplayers >= 3:
+                self.player3 = True
+            if game.minplayers <= 4 and game.maxplayers >= 4:
+                self.player4 = True
+            if game.minplayers <= 5 and game.maxplayers >= 5:
+                self.player5 = True
+            if game.maxplayers > 5:
+                self.playerX = True
+            self.initialized = True
+
+    def isValid(self):
+        return self.initialized
 
 class GameCollection(object):
     def __init__(self, username):

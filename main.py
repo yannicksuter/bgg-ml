@@ -3,13 +3,14 @@
 
 import sys
 from bggdata import GameRepository, GameCollection
+from bgganalytics import GameAnalytics
 
 VERBOSE = False
 ACTIONS = None
 FORCE_RELOAD = False
 USERNAME = None
 
-def printSysInformation():
+def print_sys_information():
     import boardgamegeek2
     print('BGGLib: {}'.format(boardgamegeek2.__version__))
     if FORCE_RELOAD:
@@ -17,7 +18,7 @@ def printSysInformation():
     else:
         print('Data: Use cached data if available')
 
-def getCmdArgs(argv):
+def process_cmd_args(argv):
     for arg in sys.argv:
         try:
             if arg.startswith("--verbose") or arg.startswith("-v"):
@@ -40,8 +41,8 @@ if __name__ == "__main__":
         print("usage: %s --action==[dump_collection,get_details]--force_online --user=USERNAME" % sys.argv[0].split('/')[-1])
         sys.exit(0)
 
-    getCmdArgs(sys.argv)
-    printSysInformation()
+    process_cmd_args(sys.argv)
+    print_sys_information()
 
     # load top 2000 games
     repository = GameRepository()
@@ -51,6 +52,9 @@ if __name__ == "__main__":
     collection = GameCollection(USERNAME)
     collection.load(repository, FORCE_RELOAD)
 
-    print("")
-    repository.getById(71).print()
-    repository.getById(163930).print()
+    # print("")
+    # repository.getById(71).print()
+    # repository.getById(163930).print()
+
+    analytics = GameAnalytics(repository)
+    analytics.get_clusters(collection)
