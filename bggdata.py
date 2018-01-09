@@ -7,6 +7,13 @@ from lxml import html
 import requests
 from tqdm import tqdm
 
+# class ComplexEncoder(json.JSONEncoder):
+#     def default(self, obj):
+#         if hasattr(obj,'reprJSON'):
+#             return obj.reprJSON()
+#         else:
+#             return json.JSONEncoder.default(self, obj)
+
 def loadCache(filename, obj_list):
     assert obj_list is not None
     try:
@@ -14,8 +21,8 @@ def loadCache(filename, obj_list):
             for line in input_file.readlines():
                 obj_list.append(Game().set(json.loads(line)))
         print("{} entries loaded from cache ({}).".format(len(obj_list), filename))
-    except:
-        pass
+    except Exception as e:
+        print("Error: %s" % str(e))
 
 
 def dumpCache(filename, obj_list):
@@ -25,8 +32,9 @@ def dumpCache(filename, obj_list):
             for entry in obj_list:
                 output_file.write(
                     json.dumps(entry.__dict__).encode(encoding='UTF-8', errors='strict').decode('utf-8') + "\n")
-    except:
-        pass
+                    # json.dumps(dict(entry)).encode(encoding='UTF-8', errors='strict').decode('utf-8') + "\n")
+    except Exception as e:
+        print("Error: %s" % str(e))
 
 def normalize(text):
     if text is None:
@@ -47,18 +55,22 @@ class Game(object):
         self.overall_rank = overall_rank
         self.expansion = None
         self.expands = None
+        self.yearpublished = 1900
+        self.minage = 0
         self.minplayers = min_players
         self.maxplayers = max_players
         self.minplaytime = min_playing_time
         self.maxplaytime = max_playing_time
-        self.features = GameFeatures()
-        self.features.initialize(self)
+        self.families = None
+        self.mechanics = None
+        self.designers = None
+        self.artists = None
+        self.categories = None
 
     def set(self, values):
         for k, v in values.items():
             if k in self.__dict__.keys():
                 setattr(self, k, v)
-        self.features.initialize(self)
         return self
 
     def isValid(self):
@@ -70,7 +82,6 @@ class Game(object):
             if rank.id == 1:
                 self.overall_rank = rank.value
         self.initialized = True
-        self.features.initialize(self)
         return self
 
     def print(self):
@@ -78,33 +89,17 @@ class Game(object):
         for key, value in self.__dict__.items():
             if key is not "id" and key is not "name" and value is not None:
                 print(" {} : {}".format(key, value))
-        # print(self.id, self.name, self.min_players, self.max_players, self.min_playing_time, self.max_playing_time)
 
 class GameFeatures(object):
-    def __init__(self):
-        self.initialized = False
-        self.player1 = False
-        self.player2 = False
-        self.player3 = False
-        self.player4 = False
-        self.player5 = False
-        self.playerX = False
-
-    def initialize(self, game):
-        if game.initialized:
-            if game.minplayers <= 1 and game.maxplayers >= 1:
-                self.player1 = True
-            if game.minplayers <= 2 and game.maxplayers >= 2:
-                self.player2 = True
-            if game.minplayers <= 3 and game.maxplayers >= 3:
-                self.player3 = True
-            if game.minplayers <= 4 and game.maxplayers >= 4:
-                self.player4 = True
-            if game.minplayers <= 5 and game.maxplayers >= 5:
-                self.player5 = True
-            if game.maxplayers > 5:
-                self.playerX = True
-            self.initialized = True
+    def __init__(self, game):
+        assert game.initialized
+        self.game = game
+        self.player1 = game.minplayers <= 1 and game.maxplayers >= 1
+        self.player2 = game.minplayers <= 2 and game.maxplayers >= 2
+        self.player3 = game.minplayers <= 3 and game.maxplayers >= 3
+        self.player4 = game.minplayers <= 4 and game.maxplayers >= 4
+        self.player5 = game.minplayers <= 5 and game.maxplayers >= 5
+        self.playerX = game.maxplayers > 5
 
     def isValid(self):
         return self.initialized
@@ -211,3 +206,10 @@ class GameRepository(object):
                 result = Game().setBGGGame(bgg_game)
                 self.games.append(result)
         return result
+
+    def getFeatures(self):
+        features = {}
+        valid_entries = list(filter(lambda x: x.isValid(), self.games))
+        for entry in valid_entries:
+            features[entry.id] = GameFeatures(entry)
+        return features

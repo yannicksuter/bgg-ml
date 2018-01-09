@@ -42,11 +42,12 @@ if __name__ == "__main__":
         sys.exit(0)
 
     process_cmd_args(sys.argv)
+    # FORCE_RELOAD = True
     print_sys_information()
 
     # load top 2000 games
     repository = GameRepository()
-    repository.load(FORCE_RELOAD)
+    repository.load(FORCE_RELOAD, max_pages=1)
 
     # # load user collection
     collection = GameCollection(USERNAME)
@@ -56,5 +57,6 @@ if __name__ == "__main__":
     # repository.getById(71).print()
     # repository.getById(163930).print()
 
+    features = repository.getFeatures()
     analytics = GameAnalytics(repository)
     analytics.get_clusters(collection)
