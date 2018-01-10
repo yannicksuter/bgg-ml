@@ -57,6 +57,6 @@ if __name__ == "__main__":
     # repository.getById(71).print()
     # repository.getById(163930).print()
 
-    features = repository.getFeatures()
+    features = repository.get_features(collection=collection)
     analytics = GameAnalytics(repository)
     analytics.get_clusters(collection)

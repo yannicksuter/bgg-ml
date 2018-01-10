@@ -7,14 +7,7 @@ from lxml import html
 import requests
 from tqdm import tqdm
 
-# class ComplexEncoder(json.JSONEncoder):
-#     def default(self, obj):
-#         if hasattr(obj,'reprJSON'):
-#             return obj.reprJSON()
-#         else:
-#             return json.JSONEncoder.default(self, obj)
-
-def loadCache(filename, obj_list):
+def load_cache(filename, obj_list):
     assert obj_list is not None
     try:
         with open(filename, "r") as input_file:
@@ -25,14 +18,13 @@ def loadCache(filename, obj_list):
         print("Error: %s" % str(e))
 
 
-def dumpCache(filename, obj_list):
+def dump_cache(filename, obj_list):
     assert obj_list is not None
     try:
         with open(filename, "w") as output_file:
             for entry in obj_list:
                 output_file.write(
-                    json.dumps(entry.__dict__).encode(encoding='UTF-8', errors='strict').decode('utf-8') + "\n")
-                    # json.dumps(dict(entry)).encode(encoding='UTF-8', errors='strict').decode('utf-8') + "\n")
+                    json.dumps(entry if type(entry) is dict else entry.__dict__).encode(encoding='UTF-8', errors='strict').decode('utf-8') + "\n")
     except Exception as e:
         print("Error: %s" % str(e))
 
@@ -73,16 +65,16 @@ class Game(object):
                 setattr(self, k, v)
         return self
 
-    def isValid(self):
-        return (self.id != 0 and self.name != "") and self.initialized == True
-
-    def setBGGGame(self, bgg_game):
+    def set_bgg_game(self, bgg_game):
         self.set(bgg_game._data)
         for rank in bgg_game.ranks:
             if rank.id == 1:
                 self.overall_rank = rank.value
         self.initialized = True
         return self
+
+    def is_valid(self):
+        return (self.id != 0 and self.name != "") and self.initialized == True
 
     def print(self):
         print(" == Details: [{}] {} ==".format(self.id, self.name))
@@ -91,52 +83,76 @@ class Game(object):
                 print(" {} : {}".format(key, value))
 
 class GameFeatures(object):
-    def __init__(self, game):
+    def __init__(self, game, collection):
         assert game.initialized
         self.game = game
-        self.player1 = game.minplayers <= 1 and game.maxplayers >= 1
-        self.player2 = game.minplayers <= 2 and game.maxplayers >= 2
-        self.player3 = game.minplayers <= 3 and game.maxplayers >= 3
-        self.player4 = game.minplayers <= 4 and game.maxplayers >= 4
-        self.player5 = game.minplayers <= 5 and game.maxplayers >= 5
-        self.playerX = game.maxplayers > 5
+        if collection:
+            self.collection_owned, self.collection_rating, self.collection_numplays = collection.includes(game.id)
+        else:
+            self.collection_owned = False
+            self.collection_rating = None
+            self.collection_numplays = None
 
-    def isValid(self):
+        self.player_solo = game.minplayers <= 1 and game.maxplayers >= 1
+        self.player_2 = game.minplayers <= 2 and game.maxplayers >= 2
+        self.player_3 = game.minplayers <= 3 and game.maxplayers >= 3
+        self.player_4 = game.minplayers <= 4 and game.maxplayers >= 4
+        self.player_5 = game.minplayers <= 5 and game.maxplayers >= 5
+        self.player_X = game.maxplayers > 5
+        for cat in game.categories:
+            self.category_adventure = (cat == "Adventure")
+            self.category_exploration = (cat == "Exploration")
+            self.category_fantasy = (cat == "Fantasy")
+            self.category_fighting = (cat == "Fighting")
+            self.category_miniatures = (cat == "Miniatures")
+
+    def is_valid(self):
         return self.initialized
 
 class GameCollection(object):
     def __init__(self, username):
         self.username = username
         self.cache_filename = "data/%s_owned_collection.cache" % self.username
-        self.owned_games = None
+        # self.owned_games = None
+        self.collection_scores = None
         self.bgg = BGGClient()
 
     def load(self, repository, force_reload = False):
         if not self.username:
             raise Exception("ERROR: no username was defined, please use --user=USERNAME to provide reference.")
 
-        game_ids = []
-        self.owned_games = []
+        self.collection_scores = []
         try:
             with open(self.cache_filename, "r") as owned:
-                self.owned_games = []
                 for line in owned.readlines():
                     g_json = json.loads(line)
-                    game_ids.append(g_json['id'])
+                    game_id = g_json['game_id']
+                    rating = g_json['rating']
+                    numplays = g_json['numplays']
+                    self.collection_scores.append({'game_id': game_id, 'rating': rating, 'numplays': numplays})
         except:
             print("Cached file not found. ({})".format(self.cache_filename))
 
-        if len(self.owned_games) == 0 or force_reload:
-            game_ids = []
+        if len(self.collection_scores) == 0 or force_reload:
             collection  = self.bgg.collection(self.username, own=True)
             if collection:
                 for game in collection.items:
-                    game_ids.append(game.id)
+                    try:
+                        rating = None if not hasattr(game, 'rating') else game.rating
+                        numplays = None if not hasattr(game, 'numplays') else game.numplays
+                        self.collection_scores.append({'game_id': game.id,'rating': rating, 'numplays': numplays})
+                    except Exception as e:
+                        print("Error: %s" % str(e))
 
-        self.owned_games = repository.getByIds(game_ids)
-        dumpCache(self.cache_filename, self.owned_games)
+        dump_cache(self.cache_filename, self.collection_scores)
+        print("Collection [owned:{}] loaded: {} games".format(self.username, len(self.collection_scores)))
 
-        print("Collection [owned:{}] loaded: {} games".format(self.username, len(self.owned_games)))
+    def includes(self, game_id):
+        assert self.collection_scores
+        for game in self.collection_scores:
+            if game_id == game['game_id']:
+                return True, game['rating'], game['numplays']
+        return False, None, 0
 
 class GameRepository(object):
     def __init__(self):
@@ -147,7 +163,7 @@ class GameRepository(object):
     def load(self, force_reload=False, max_pages=20):
         self.games = []
         try:
-            loadCache(self.cache_filename, self.games)
+            load_cache(self.cache_filename, self.games)
         except:
             print("Cached file not found. ({})".format(self.cache_filename))
 
@@ -168,32 +184,32 @@ class GameRepository(object):
                             self.games.append(Game(entry_id, overall_rank=entry_exp_rank))
                         except:
                             pass
-            dumpCache(self.cache_filename, self.games)
+            dump_cache(self.cache_filename, self.games)
 
         self.validate()
         print("Repository loaded: %d games." % len(self.games))
 
     def validate(self, retries = 3):
         for run in range(retries):
-            invalid_entries = list(filter(lambda x : not x.isValid(), self.games))
+            invalid_entries = list(filter(lambda x : not x.is_valid(), self.games))
             if len(invalid_entries) == 0:
                 return
             print("Loading missing game details from BGG [count: {}].".format(len(invalid_entries)))
             for chunk in tqdm(iterable=list(chunks(invalid_entries, 50)), desc="Loading game details (try:{})".format(run+1), ncols=100):
                 games = [game.id for game in chunk]
                 for res in self.bgg.game_list(games):
-                    self.getById(res.id).setBGGGame(res)
-            dumpCache(self.cache_filename, self.games)
+                    self.get_by_id(res.id).set_bgg_game(res)
+            dump_cache(self.cache_filename, self.games)
 
-    def getByIds(self, id_list, load_missing = True):
+    def get_by_ids(self, id_list, load_missing = True):
         if load_missing:
             game_index = [x.id for x in self.games]
             for missing_id in list(filter(lambda x: x not in game_index, id_list)):
                 self.games.append(Game(id=missing_id))
             self.validate()
-        return list(filter(lambda x: x.id in id_list and x.isValid, self.games))
+        return list(filter(lambda x: x.id in id_list and x.is_valid, self.games))
 
-    def getById(self, id, load_missing = True):
+    def get_by_id(self, id, load_missing = True):
         for game in self.games:
             if game.id == id:
                 return game
@@ -203,13 +219,13 @@ class GameRepository(object):
             bgg_game = self.bgg.game(game_id=id)
             if bgg_game:
                 print("Missing ID={}, loading...".format(id))
-                result = Game().setBGGGame(bgg_game)
+                result = Game().set_bgg_game(bgg_game)
                 self.games.append(result)
         return result
 
-    def getFeatures(self):
+    def get_features(self, collection=None):
         features = {}
-        valid_entries = list(filter(lambda x: x.isValid(), self.games))
+        valid_entries = list(filter(lambda x: x.is_valid(), self.games))
         for entry in valid_entries:
-            features[entry.id] = GameFeatures(entry)
+            features[entry.id] = GameFeatures(entry, collection)
         return features
