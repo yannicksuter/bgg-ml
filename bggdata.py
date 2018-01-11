@@ -7,16 +7,18 @@ from lxml import html
 import requests
 from tqdm import tqdm
 
-def load_cache(filename, obj_list):
+def load_cache(filename, obj_list, obj_type=None):
     assert obj_list is not None
     try:
         with open(filename, "r") as input_file:
             for line in input_file.readlines():
-                obj_list.append(Game().set(json.loads(line)))
+                if obj_type:
+                    obj_list.append(obj_type().set(json.loads(line)))
+                else:
+                    obj_list.append(json.loads(line))
         print("{} entries loaded from cache ({}).".format(len(obj_list), filename))
     except Exception as e:
         print("Error: %s" % str(e))
-
 
 def dump_cache(filename, obj_list):
     assert obj_list is not None
@@ -99,12 +101,17 @@ class GameFeatures(object):
         self.player_4 = game.minplayers <= 4 and game.maxplayers >= 4
         self.player_5 = game.minplayers <= 5 and game.maxplayers >= 5
         self.player_X = game.maxplayers > 5
+
+        for mechanic in game.mechanics:
+            setattr(self, 'mechanic_' + re.sub(r'\W+', '', mechanic.lower()), True)
+        for family in game.families:
+            setattr(self, 'family_' + re.sub(r'\W+', '', family.lower()), True)
         for cat in game.categories:
-            self.category_adventure = (cat == "Adventure")
-            self.category_exploration = (cat == "Exploration")
-            self.category_fantasy = (cat == "Fantasy")
-            self.category_fighting = (cat == "Fighting")
-            self.category_miniatures = (cat == "Miniatures")
+            setattr(self, 'category_' + re.sub(r'\W+', '', cat.lower()), True)
+        for artist in game.artists:
+            setattr(self, 'artist_' + re.sub(r'\W+', '', artist.lower()), True)
+        for designer in game.designers:
+            setattr(self, 'artist_' + re.sub(r'\W+', '', designer.lower()), True)
 
     def is_valid(self):
         return self.initialized
@@ -113,7 +120,6 @@ class GameCollection(object):
     def __init__(self, username):
         self.username = username
         self.cache_filename = "data/%s_owned_collection.cache" % self.username
-        # self.owned_games = None
         self.collection_scores = None
         self.bgg = BGGClient()
 
@@ -123,13 +129,7 @@ class GameCollection(object):
 
         self.collection_scores = []
         try:
-            with open(self.cache_filename, "r") as owned:
-                for line in owned.readlines():
-                    g_json = json.loads(line)
-                    game_id = g_json['game_id']
-                    rating = g_json['rating']
-                    numplays = g_json['numplays']
-                    self.collection_scores.append({'game_id': game_id, 'rating': rating, 'numplays': numplays})
+            load_cache(self.cache_filename, self.collection_scores)
         except:
             print("Cached file not found. ({})".format(self.cache_filename))
 
@@ -143,6 +143,9 @@ class GameCollection(object):
                         self.collection_scores.append({'game_id': game.id,'rating': rating, 'numplays': numplays})
                     except Exception as e:
                         print("Error: %s" % str(e))
+
+        # make sure all games from collection are added to central repository
+        repository.get_by_ids([item['game_id'] for item in self.collection_scores])
 
         dump_cache(self.cache_filename, self.collection_scores)
         print("Collection [owned:{}] loaded: {} games".format(self.username, len(self.collection_scores)))
@@ -163,7 +166,7 @@ class GameRepository(object):
     def load(self, force_reload=False, max_pages=20):
         self.games = []
         try:
-            load_cache(self.cache_filename, self.games)
+            load_cache(self.cache_filename, self.games, obj_type=Game)
         except:
             print("Cached file not found. ({})".format(self.cache_filename))
 
@@ -228,4 +231,10 @@ class GameRepository(object):
         valid_entries = list(filter(lambda x: x.is_valid(), self.games))
         for entry in valid_entries:
             features[entry.id] = GameFeatures(entry, collection)
-        return features
+        feature_dim = set()
+        for id, game_features in features.items():
+            feature_dim = feature_dim.union(game_features.__dict__.keys())
+
+        print("Features extracted: %d properties identified." % len(feature_dim))
+
+        return features, sorted(feature_dim)
