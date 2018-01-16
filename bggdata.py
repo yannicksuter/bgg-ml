@@ -6,6 +6,7 @@ from boardgamegeek2 import BGGClient
 from lxml import html
 import requests
 from tqdm import tqdm
+from collections import Counter
 
 def load_cache(filename, obj_list, obj_type=None):
     assert obj_list is not None
@@ -88,12 +89,13 @@ class GameFeatures(object):
     def __init__(self, game, collection):
         assert game.initialized
         self.game = game
-        if collection:
-            self.collection_owned, self.collection_rating, self.collection_numplays = collection.includes(game.id)
-        else:
-            self.collection_owned = False
-            self.collection_rating = None
-            self.collection_numplays = None
+
+        # if collection:
+        #     self.collection_owned, self.collection_rating, self.collection_numplays = collection.includes(game.id)
+        # else:
+        #     self.collection_owned = False
+        #     self.collection_rating = None
+        #     self.collection_numplays = None
 
         self.player_solo = game.minplayers <= 1 and game.maxplayers >= 1
         self.player_2 = game.minplayers <= 2 and game.maxplayers >= 2
@@ -144,11 +146,11 @@ class GameCollection(object):
                     except Exception as e:
                         print("Error: %s" % str(e))
 
+        print("Collection [owned:{}] loaded: {} games".format(self.username, len(self.collection_scores)))
+
         # make sure all games from collection are added to central repository
         repository.get_by_ids([item['game_id'] for item in self.collection_scores])
-
         dump_cache(self.cache_filename, self.collection_scores)
-        print("Collection [owned:{}] loaded: {} games".format(self.username, len(self.collection_scores)))
 
     def includes(self, game_id):
         assert self.collection_scores
@@ -156,6 +158,12 @@ class GameCollection(object):
             if game_id == game['game_id']:
                 return True, game['rating'], game['numplays']
         return False, None, 0
+
+    def get_score_hist(self):
+        score_hist = Counter()
+        for game in self.collection_scores:
+            score_hist[str(game['rating'])] += 1
+        return score_hist
 
 class GameRepository(object):
     def __init__(self):
@@ -190,7 +198,6 @@ class GameRepository(object):
             dump_cache(self.cache_filename, self.games)
 
         self.validate()
-        print("Repository loaded: %d games." % len(self.games))
 
     def validate(self, retries = 3):
         for run in range(retries):
@@ -203,6 +210,7 @@ class GameRepository(object):
                 for res in self.bgg.game_list(games):
                     self.get_by_id(res.id).set_bgg_game(res)
             dump_cache(self.cache_filename, self.games)
+            print("Repository loaded: %d games." % len(self.games))
 
     def get_by_ids(self, id_list, load_missing = True):
         if load_missing:

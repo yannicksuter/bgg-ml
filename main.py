@@ -47,17 +47,17 @@ if __name__ == "__main__":
 
     # load top 2000 games
     repository = GameRepository()
-    repository.load(FORCE_RELOAD, max_pages=1)
+    repository.load(FORCE_RELOAD, max_pages=4)
 
     # # load user collection
     collection = GameCollection(USERNAME)
     collection.load(repository, FORCE_RELOAD)
-
-    # print("")
-    # repository.getById(71).print()
-    # repository.getById(163930).print()
-
-    features, dimensions = repository.get_features(collection=collection)
+    # score_hist = collection.get_score_hist()
+    # print(sorted(score_hist))
 
     analytics = GameAnalytics(repository)
-    analytics.get_clusters(collection)
+    game_recs = analytics.get_recommendations(collection, default_score=5)
+    print("\nRecommendations [for {}]:".format(USERNAME))
+    for tup in game_recs:
+        game = repository.get_by_id(tup[0])
+        print("- {} (#{}):{} https://boardgamegeek.com/boardgame/{}".format(game.name, game.overall_rank, tup[1], game.id))
