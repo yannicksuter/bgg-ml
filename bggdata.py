@@ -91,19 +91,16 @@ class GameFeatures(object):
         assert game.initialized
         self.game = game
 
-        # if collection:
-        #     self.collection_owned, self.collection_rating, self.collection_numplays = collection.includes(game.id)
-        # else:
-        #     self.collection_owned = False
-        #     self.collection_rating = None
-        #     self.collection_numplays = None
-
         self.player_solo = game.minplayers <= 1 and game.maxplayers >= 1
         self.player_2 = game.minplayers <= 2 and game.maxplayers >= 2
         self.player_3 = game.minplayers <= 3 and game.maxplayers >= 3
         self.player_4 = game.minplayers <= 4 and game.maxplayers >= 4
         self.player_5 = game.minplayers <= 5 and game.maxplayers >= 5
         self.player_X = game.maxplayers > 5
+
+        setattr(self, 'age_min_' + str(int(game.minage/5)*5), True)
+        setattr(self, 'time_min_' + str(int(game.minplaytime/15)*15), True)
+        setattr(self, 'time_max_' + str(int(game.maxplaytime/15)*15), True)
 
         for mechanic in game.mechanics:
             setattr(self, 'mechanic_' + re.sub(r'\W+', '', mechanic.lower()), True)
@@ -124,8 +121,9 @@ class GameFeatures(object):
             for cat in self.gen_permutations(game.categories, 2):
                 setattr(self, 'category_' + re.sub(r'\W+', '', cat.lower()), True)
 
-    def gen_permutations(self, objects, len):
-        l = [sorted(tup)[0]+'+'+sorted(tup)[1] for tup in itertools.permutations(objects, 2)]
+    def gen_permutations(self, objects, tuple_size):
+        """Generate deduplicated list of permutations of input objects with a given tuple_size"""
+        l = [sorted(tup)[0]+'+'+sorted(tup)[1] for tup in itertools.permutations(objects, tuple_size)]
         return set(l)
 
     def is_valid(self):
@@ -149,6 +147,7 @@ class GameCollection(object):
             print("Cached file not found. ({})".format(self.cache_filename))
 
         if len(self.collection_scores) == 0 or force_reload:
+            self.collection_scores = []
             collection  = self.bgg.collection(self.username, own=True)
             if collection:
                 for game in collection.items:

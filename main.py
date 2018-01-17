@@ -50,10 +50,11 @@ if __name__ == "__main__":
 
     # load top 2000 games
     repository = GameRepository()
-    repository.load(FORCE_RELOAD, max_pages=4)
+    repository.load(FORCE_RELOAD, max_pages=20)
 
     # # load user collection
     collection = GameCollection(USERNAME)
+    # FORCE_RELOAD = True
     collection.load(repository, FORCE_RELOAD)
     # score_hist = collection.get_score_hist()
     # print(sorted(score_hist))

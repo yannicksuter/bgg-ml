@@ -7,7 +7,19 @@ class GameAnalytics(object):
     def __init__(self, repository):
         self.repository = repository
 
-    def get_recommendations_linreg(self, collection, rnumb=10, default_score=7.0):
+    def get_dim_features(self, game_features, dimensions):
+        entry = []
+        for dim in dimensions:
+            dim_val = 0.0
+            if hasattr(game_features, dim):
+                if type(getattr(game_features, dim)) is bool:
+                    dim_val = 1.0 if getattr(game_features, dim) else 0.0
+                if type(getattr(game_features, dim)) is int or type(getattr(game_features, dim)) is float:
+                    dim_val = getattr(game_features, dim)
+            entry.append(dim_val)
+        return entry
+
+    def get_recommendations_linreg(self, collection, rnumb=10, default_score=7.0, export_col_prediction=True):
         features, dimensions = self.repository.get_features(collection=collection)
 
         x_train = []
@@ -15,15 +27,7 @@ class GameAnalytics(object):
         x_predict = {}
         for id, game_features in features.items():
             try:
-                entry = []
-                for dim in dimensions:
-                    dim_val = 0.0
-                    if hasattr(game_features, dim):
-                        if type(getattr(game_features, dim)) is bool:
-                            dim_val = 1.0 if getattr(game_features, dim) else 0.0
-                        if type(getattr(game_features, dim)) is int or type(getattr(game_features, dim)) is float:
-                            dim_val = getattr(game_features, dim)
-                    entry.append(dim_val)
+                entry = self.get_dim_features(game_features, dimensions)
                 col_inc, col_rating, col_numplays = collection.includes(id)
                 if col_inc:
                     if col_rating is None:
@@ -36,18 +40,26 @@ class GameAnalytics(object):
             except:
                 pass
 
-        print("\nFitting training set: {}".format(len(x_train)))
-
-        ols = linear_model.LinearRegression()
+        print("Calculating recommendations using linear regression method.")
+        print("> Fitting training set: {}".format(len(x_train)))
+        # ols = linear_model.LinearRegression()
+        ols = linear_model.BayesianRidge()
         model = ols.fit(x_train[:-10], y_train[:-10])
-        # model = ols.fit(x_train, y_train)
-
-        print("\nLinReg test set:")
-        for i in zip(y_train[-10:], model.predict(x_train[-10:])):
-            print(i)
-
+        test_predictions = list(zip(y_train[-10:], model.predict(x_train[-10:])))
+        avg_error = sum([abs(tup[1]-tup[0]) for tup in test_predictions]) / len(test_predictions)
+        print("> Model match on test set: %s (avg_err: %.2f)" % (str(["%.2f: %.2f (%.2f)" % (tup[0], tup[1], tup[1]-tup[0]) for tup in test_predictions]), avg_error))
+        print("> Predicting scores for %d boardgames." % (len(x_predict)))
         predicted_id_score = zip([k for k,v in x_predict.items()], model.predict([v for k,v in x_predict.items()]))
         sorted_prediction = sorted(predicted_id_score, key=lambda tup: tup[1], reverse=True)
+
+        if export_col_prediction:
+            with open("data/col_prediction.tsv", "w") as output_file:
+                for id, game_features in features.items():
+                    col_inc, col_rating, col_numplays = collection.includes(id)
+                    if col_inc:
+                        game = self.repository.get_by_id(id)
+                        pred_score = model.predict([self.get_dim_features(game_features, dimensions)])
+                        output_file.write("{}\t{}\t{}\t{}\thttps://boardgamegeek.com/boardgame/{}\n".format(game.overall_rank, game.name.encode("utf-8"), col_rating, pred_score[0], id))
 
         return sorted_prediction[0:rnumb if rnumb < len(sorted_prediction) else len(sorted_prediction)]
 
