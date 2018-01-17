@@ -5,6 +5,9 @@ import sys
 from bggdata import GameRepository, GameCollection
 from bgganalytics import GameAnalytics
 
+import warnings
+warnings.filterwarnings(action="ignore", module="scipy", message="^internal gelsd")
+
 VERBOSE = False
 ACTIONS = None
 FORCE_RELOAD = False
@@ -56,7 +59,7 @@ if __name__ == "__main__":
     # print(sorted(score_hist))
 
     analytics = GameAnalytics(repository)
-    game_recs = analytics.get_recommendations(collection, default_score=5)
+    game_recs = analytics.get_recommendations_linreg(collection, default_score=None)
     print("\nRecommendations [for {}]:".format(USERNAME))
     for tup in game_recs:
         game = repository.get_by_id(tup[0])

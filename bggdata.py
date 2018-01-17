@@ -7,6 +7,7 @@ from lxml import html
 import requests
 from tqdm import tqdm
 from collections import Counter
+import itertools
 
 def load_cache(filename, obj_list, obj_type=None):
     assert obj_list is not None
@@ -86,7 +87,7 @@ class Game(object):
                 print(" {} : {}".format(key, value))
 
 class GameFeatures(object):
-    def __init__(self, game, collection):
+    def __init__(self, game, collection, generate_permutations=True):
         assert game.initialized
         self.game = game
 
@@ -114,6 +115,18 @@ class GameFeatures(object):
             setattr(self, 'artist_' + re.sub(r'\W+', '', artist.lower()), True)
         for designer in game.designers:
             setattr(self, 'artist_' + re.sub(r'\W+', '', designer.lower()), True)
+
+        if generate_permutations:
+            for mechanic in self.gen_permutations(game.mechanics, 2):
+                setattr(self, 'mechanic_' + re.sub(r'\W+', '', mechanic.lower()), True)
+            for family in self.gen_permutations(game.families, 2):
+                setattr(self, 'family_' + re.sub(r'\W+', '', family.lower()), True)
+            for cat in self.gen_permutations(game.categories, 2):
+                setattr(self, 'category_' + re.sub(r'\W+', '', cat.lower()), True)
+
+    def gen_permutations(self, objects, len):
+        l = [sorted(tup)[0]+'+'+sorted(tup)[1] for tup in itertools.permutations(objects, 2)]
+        return set(l)
 
     def is_valid(self):
         return self.initialized
