@@ -1,5 +1,10 @@
 
 
+#Todo
+- cross checking: running multiple train/test split runs to verify how stable the fit_error is
+- multiclass classifier using NN 
+- normalizing input-score for linear regression
+
 #Dependencies
 
 * BGG XML API 2: https://boardgamegeek.com/wiki/page/BGG_XML_API2

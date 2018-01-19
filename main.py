@@ -60,7 +60,8 @@ if __name__ == "__main__":
     # print(sorted(score_hist))
 
     analytics = GameAnalytics(repository)
-    game_recs = analytics.get_recommendations_linreg(collection, default_score=None)
+    game_recs = analytics.get_recommendations_nn(collection)
+    # game_recs = analytics.get_recommendations_linreg(collection, testset_size=0)
     print("\nRecommendations [for {}]:".format(USERNAME))
     for tup in game_recs:
         game = repository.get_by_id(tup[0])
